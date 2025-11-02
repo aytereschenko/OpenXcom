@@ -1,0 +1,61 @@
+name: macOS CI
+on: [workflow_dispatch]
+jobs:
+  build:
+    name: macOS (clang)
+
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install packages (macOS)
+        uses: melusina-org/setup-macports@v1
+        id: macports
+        with:
+          parameters: scripts/macports-config.yml
+
+      - name: Install ccache (macOS)
+        run: brew install ccache
+
+      - name: Setup Cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ccache-macOS-clang
+
+      - name: Setup environment
+        shell: bash
+        run: |
+          echo "describe=$(git describe)" >> $GITHUB_ENV
+          echo "MAYBE_SUDO=sudo" >> $GITHUB_ENV
+          echo "CMAKE_BUILD_PARALLEL_LEVEL=`getconf _NPROCESSORS_ONLN 2>/dev/null || getconf NPROCESSORS_ONLN 2>/dev/null || echo 2`" >> $GITHUB_ENV
+
+      - name: Generate project files
+        run: |
+          cmake -B build . -DCMAKE_BUILD_TYPE=Release -DENABLE_WARNING=1 -DCHECK_CCACHE=1 -DCMAKE_PREFIX_PATH=/opt/local
+        env:
+          CC: clang
+          CXX: clang++
+
+      - name: Compile source code
+        run: |
+          cmake --build build -v --config Release
+
+      - name: Make install
+        shell: bash
+        run: |
+          $MAYBE_SUDO cmake --build build -v --config Release --target install
+
+      - name: Archive artifacts
+        uses: actions/upload-artifact@v4
+        with:
+            name: openxcom_macOS_clang-${{ env.describe }}
+            path: |
+                build/openxcom.app/**/*
+
+      - name: ccache stats
+        run: ccache -s --max-size=390MB
